@@ -1,0 +1,93 @@
+version: "3.7"
+services:
+  backend-db:
+    image: mongo:4.1
+    env_file: .env.dist
+    entrypoint: sh
+    command: -c '
+        echo "starting backend-db" ;
+        mkfifo output ;
+        docker-entrypoint.sh mongod --bind_ip_all 2>&1 | tee output &
+        echo "restoring backend-db" ;
+        while ! mongorestore --nsInclude main.*  ; do echo "restoring data" ; sleep 1s ; done ;
+        echo "available backend-db" ;
+        cat output > /dev/null '
+    ports:
+    - "27001:27017"
+    container_name: backend-db
+    volumes:
+    - .test_data/dump:/run/dump
+    working_dir: /run
+
+  mongo-express-main:
+    image: mongo-express
+    ports:
+      - "8081:8081"
+    restart: always
+    env_file: .env.dist
+    environment:
+      ME_CONFIG_MONGODB_SERVER: backend-db
+    depends_on:
+    - backend-db
+
+  backend:
+    build:
+      context: .
+      args:
+        main_folder: backend
+    env_file: .env.dist
+    environment:
+      MONGO_DATABASE: main
+      MONGO_HOST: backend-db
+    command: sh -c '
+      while ! nc -z backend-db 27017 ; do echo "Waiting postgres 1s" ; sleep 1 ; done ;
+      backend'
+    container_name: backend
+    depends_on:
+    - backend-db
+
+  scoring-db:
+    image: mongo:4.1
+    entrypoint: sh
+    command: -c '
+        echo "starting scoring-db" ;
+        mkfifo output ;
+        docker-entrypoint.sh mongod --bind_ip_all 2>&1 | tee output &
+        echo "restoring scoring-db" ;
+        while ! mongorestore --nsInclude tags.*  ; do echo "restoring data" ; sleep 1s ; done ;
+        echo "available scoring-db" ;
+        cat output > /dev/null '
+    ports:
+    - "27002:27017"
+    container_name: scoring-db
+    volumes:
+    - .test_data/dump:/run/dump
+    working_dir: /run
+
+  mongo-express-tags:
+    image: mongo-express
+    ports:
+      - "8082:8081"
+    restart: always
+    environment:
+      ME_CONFIG_MONGODB_SERVER: scoring-db
+    depends_on:
+    - backend-db
+
+  scoring:
+    build:
+      context: .
+      args:
+        main_folder: scoring
+    env_file: .env.dist
+    environment:
+      MONGO_DATABASE: tags
+      MONGO_HOST: scoring-db
+    command: sh -c '
+      while ! nc -z scoring-db 27017 ; do echo "Waiting scoring-db 1s" ; sleep 1 ; done ;
+      scoring'
+    container_name: scoring
+    depends_on:
+    - scoring-db
+
+
