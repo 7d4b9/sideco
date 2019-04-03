@@ -5,6 +5,8 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	"gitlab.com/bbrod/sideco/backend"
+	"gitlab.com/bbrod/sideco/backend/http"
 	"gitlab.com/bbrod/sideco/mongo"
 )
 
@@ -15,7 +17,8 @@ func main() {
 	if err != nil {
 		log.WithError(err).Fatal("no database")
 	}
-	// tagDB := client.Database("main").
-	client.Database("main")
-	<-make(chan struct{})
+	mainDB := client.Database("main")
+	handler := backend.Handler{Database: mainDB}
+	server := http.NewServer(&handler)
+	<-server.Run(ctx)
 }
