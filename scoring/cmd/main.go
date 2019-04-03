@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 	"gitlab.com/bbrod/sideco/mongo"
@@ -11,14 +10,17 @@ import (
 )
 
 func main() {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx := context.TODO() // catch SIGINT
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	client, err := mongo.NewClient(ctx)
 	if err != nil {
 		log.WithError(err).Fatal("no database")
 	}
-	tagDB := client.Database("tag")
+	tagDB := client.Database("tags")
 	handler := scoring.Handler{Database: tagDB}
 	server := grpc.Server{Handler: &handler}
+	ctx, cancel = context.WithCancel(ctx)
+	defer cancel()
 	<-server.Run(ctx)
 }

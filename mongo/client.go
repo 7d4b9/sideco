@@ -17,7 +17,6 @@ const (
 	port     setting = "port"
 	username setting = "username"
 	password setting = "password"
-	database setting = "database"
 )
 
 var v = viper.New()
@@ -25,11 +24,8 @@ var v = viper.New()
 func init() {
 	v.AutomaticEnv()
 	v.SetEnvPrefix("mongo")
-	v.SetDefault(string(username), "side")
-	v.SetDefault(string(password), "test")
 	v.SetDefault(string(host), "mongo")
 	v.SetDefault(string(port), "27017")
-	v.SetDefault(string(database), "test")
 }
 
 // Client abstract an underlying client layer.
@@ -39,12 +35,9 @@ type Client struct {
 
 // NewClient creates a new client based upon an underlying layer and check additional startup sanity conditions.
 func NewClient(ctx context.Context) (*Client, error) {
-	uri := fmt.Sprintf(`mongodb://%s:%s@%s:%s/%s`,
-		v.GetString(string(username)),
-		v.GetString(string(password)),
+	uri := fmt.Sprintf(`mongodb://%s:%s`,
 		v.GetString(string(host)),
 		v.GetString(string(port)),
-		v.GetString(string(database)),
 	)
 	client, err := mongo.NewClient(options.Client().ApplyURI(uri))
 	if err != nil {

@@ -8,7 +8,7 @@ COPY . .
 # RUN go-wrapper download
 ARG main_folder
 ENV GO111MODULES=on
-RUN go build -v -mod vendor -o /build/${main_folder} ./${main_folder}
+RUN go build -v -mod vendor -o /build/app ./${main_folder}
 
 FROM alpine:3.9
 
@@ -18,5 +18,5 @@ RUN apk --no-cache add ca-certificates
 WORKDIR /usr/local/bin
 
 ARG main_folder
-COPY --from=builder /build/${main_folder} .
+COPY --from=builder /build/app .
 CMD ["./app"]

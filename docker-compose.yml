@@ -2,7 +2,6 @@ version: "3.7"
 services:
   backend-db:
     image: mongo:4.1
-    env_file: .env.dist
     entrypoint: sh
     command: -c '
         echo "starting backend-db" ;
@@ -24,7 +23,6 @@ services:
     ports:
       - "8081:8081"
     restart: always
-    env_file: .env.dist
     environment:
       ME_CONFIG_MONGODB_SERVER: backend-db
     depends_on:
@@ -34,17 +32,19 @@ services:
     build:
       context: .
       args:
-        main_folder: backend
-    env_file: .env.dist
+        main_folder: backend/cmd
     environment:
-      MONGO_DATABASE: main
       MONGO_HOST: backend-db
     command: sh -c '
       while ! nc -z backend-db 27017 ; do echo "Waiting postgres 1s" ; sleep 1 ; done ;
-      backend'
+      while ! nc -z scoring 8080 ; do echo "Waiting scoring API 1s" ; sleep 1 ; done ;
+      app'
     container_name: backend
     depends_on:
     - backend-db
+    - scoring
+    ports:
+      - "9001:8080"
 
   scoring-db:
     image: mongo:4.1
@@ -78,16 +78,14 @@ services:
     build:
       context: .
       args:
-        main_folder: scoring
-    env_file: .env.dist
+        main_folder: scoring/cmd
     environment:
-      MONGO_DATABASE: tags
       MONGO_HOST: scoring-db
     command: sh -c '
       while ! nc -z scoring-db 27017 ; do echo "Waiting scoring-db 1s" ; sleep 1 ; done ;
-      scoring'
+      app'
     container_name: scoring
     depends_on:
     - scoring-db
-
-
+    ports:
+      - "9002:8080"
