@@ -12,10 +12,18 @@ service Scoring {
 
 message GetScoreRequest {
   string taskId = 1;
-  repeated string tag = 2;
+  message Applicant {
+    string siderID = 1;
+    repeated string tags =2;
+  }
+  repeated Applicant applicants = 2;
 }
 
 message GetScoreResponse {
-  int32 score = 1;
-  repeated string matchingTag = 2;
+  message Applicant{
+    string siderID = 1;
+    int32 score = 2;
+  }
+  repeated Applicant scores = 1;
+  repeated string tags = 2;
 }

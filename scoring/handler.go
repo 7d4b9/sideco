@@ -3,7 +3,7 @@ package scoring
 //go:generate protoc api.proto --go_out=plugins=grpc:.
 
 import (
-	"context"
+	context "context"
 
 	log "github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson"
@@ -14,44 +14,51 @@ type Handler struct {
 	*mongo.Database
 }
 
-func (s *Handler) GetScoreTags(ctx context.Context, taskID string, userTags []string) (score int32, tags []string, err error) {
+type User struct {
+	SiderID string
+	Tags    []string
+}
+
+type ScoredUser struct {
+	*User
+	Score        int32
+	MatchingTags []string
+}
+
+func (s *Handler) GetScoreTags(ctx context.Context, taskID string, users []User) (scoredUsers []ScoredUser, tags []string, err error) {
 	tagsColl := s.Collection("tasksTags")
-	cur, err := tagsColl.Find(ctx, bson.D{{"_id", taskID}})
-	if err != nil {
+	res := tagsColl.FindOne(ctx, bson.D{{"_id", taskID}})
+	if err = res.Err(); err != nil {
 		log.WithError(err).WithField("task_id", taskID).Error("db error")
 		return
 	}
-	defer cur.Close(ctx)
-	var (
-		matchCount int32
-		tagsCount  = int32(len(userTags))
-	)
-	var matchingTags []string
-	for cur.Next(ctx) {
-		var tasks struct {
-			ID   string   `bson:"_id"`
-			Tags []string `bson:"tags"`
-		}
-		if err = cur.Decode(&tasks); err != nil {
-			log.WithError(err).Error("decode user")
-			return
-		}
-		if count := int32(len(tasks.Tags)); tagsCount < count {
-			tagsCount = count
-		}
-		for _, tag := range tasks.Tags {
-			for _, userTag := range userTags {
+	var tasks struct {
+		Tags []string `bson:"tags"`
+	}
+	if err = res.Decode(&tasks); err != nil {
+		log.WithError(err).Error("decode user")
+		return
+	}
+	taskTags := tasks.Tags
+	for _, tag := range taskTags {
+		for i := range users {
+			user := &users[i]
+			var matchingTags []string
+			for _, userTag := range user.Tags {
 				if tag == userTag {
 					matchingTags = append(matchingTags, tag)
-					matchCount++
 				}
 			}
+			matching, total := len(matchingTags), len(taskTags)
+			if matching != 0 && total != 0 {
+				scoredUsers = append(scoredUsers, ScoredUser{
+					User:         user,
+					MatchingTags: matchingTags,
+					Score:        int32((100 * matching) / total),
+				})
+			}
 		}
-		continue //process only the first matching
 	}
-	if tagsCount != 0 {
-		score = ((100 * matchCount) / tagsCount)
-		tags = matchingTags
-	}
+	tags = taskTags
 	return
 }

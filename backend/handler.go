@@ -36,11 +36,11 @@ type Applicant struct {
 }
 
 type EvalResponse struct {
-	TaskID      string    `json:"taskId" bson:"_id,omitempty"`
-	Applicants  Applicant `json:"applicants" bson:"_"`
-	Description string    `json:"description" bson:"description,omitempty"`
-	Country     string    `json:"country" bson:"country,omitempty"`
-	Tags        []string  `json:"tags" bson:"tags,omitempty"`
+	TaskID      string      `json:"taskId" bson:"_id,omitempty"`
+	Applicants  []Applicant `json:"applicants" bson:"_"`
+	Description string      `json:"description" bson:"description,omitempty"`
+	Country     string      `json:"country" bson:"country,omitempty"`
+	Tags        []string    `json:"tags" bson:"tags,omitempty"`
 }
 
 type Handler struct {
@@ -56,46 +56,42 @@ func (s *Handler) Eval(req *EvalRequest) (resp *EvalResponse, err error) {
 	usersColl := s.Collection("users")
 	cur, err := usersColl.Find(ctx, bson.D{{"taskApplications", taskID}})
 	if err != nil {
-		log.WithError(err).WithField("task_id", taskID).Error("db error")
+		log.WithField("task_id", taskID).Error("db error")
 		return nil, err
 	}
 	defer cur.Close(ctx)
-	best := &EvalResponse{TaskID: taskID}
-	for cur.Next(ctx) {
+	scoringRequest := &scoring.GetScoreRequest{TaskId: taskID}
+	for i := 0; cur.Next(ctx); i++ {
 		var user struct {
-			Tags []string `bson:"tags"`
+			SiderID string   `bson:"_id"`
+			Tags    []string `bson:"tags"`
 		}
 		if err := cur.Decode(&user); err != nil {
-			log.WithError(err).Error()
 			return nil, err
 		}
-		scoringRequest := &scoring.GetScoreRequest{TaskId: taskID, Tag: user.Tags}
-		scoringResponse, err := s.GetScore(ctx, scoringRequest)
-		if err != nil {
-			log.WithError(err).Error()
+		scoringRequest.Applicants = append(scoringRequest.Applicants, &scoring.GetScoreRequest_Applicant{SiderID: user.SiderID, Tags: user.Tags})
+	}
+	scoringResponse, err := s.GetScore(ctx, scoringRequest)
+	if err != nil {
+		return nil, err
+	}
+	if len(scoringResponse.Scores) == 0 {
+		return nil, err
+	}
+	var applicants []Applicant
+	for i := range scoringResponse.Scores {
+		resp := scoringResponse.Scores[i]
+		res := usersColl.FindOne(ctx, bson.D{{"_id", resp.SiderID}})
+		if err := res.Err(); err != nil {
+			log.Error("query user details")
 			return nil, err
 		}
-		replaceBest := func() error {
-			if err := cur.Decode(&best.Applicants); err != nil {
-				log.Error("cannot replace best response")
-				return err
-			}
-			best.Applicants.Score = scoringResponse.Score
-			best.Tags = scoringResponse.MatchingTag
-			return nil
+		applicant := Applicant{SiderID: resp.SiderID, Score: resp.Score}
+		if err := res.Decode(&applicant); err != nil {
+			log.Error("cannot decode applicant")
+			return nil, err
 		}
-		if scoringResponse.Score > best.Applicants.Score {
-			if err := replaceBest(); err != nil {
-				return nil, err
-			}
-			continue
-		}
-		if scoringResponse.Score == best.Applicants.Score && len(scoringResponse.MatchingTag) > len(best.Tags) {
-			if err := replaceBest(); err != nil {
-				return nil, err
-			}
-			continue
-		}
+		applicants = append(applicants, applicant)
 	}
 	taskColl := s.Collection("tasks")
 	task := taskColl.FindOne(ctx, bson.D{{"_id", taskID}})
@@ -103,9 +99,10 @@ func (s *Handler) Eval(req *EvalRequest) (resp *EvalResponse, err error) {
 		log.Error("cannot query task collection")
 		return nil, err
 	}
-	if err := task.Decode(&best); err != nil {
-		log.WithError(err).Error("cannot add task information")
+	out := EvalResponse{TaskID: taskID, Tags: scoringResponse.Tags, Applicants: applicants}
+	if err := task.Decode(&out); err != nil {
+		log.Error("cannot add task information")
 		return nil, err
 	}
-	return best, nil
+	return &out, nil
 }

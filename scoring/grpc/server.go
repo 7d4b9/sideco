@@ -31,11 +31,22 @@ type Server struct {
 }
 
 func (s *Server) GetScore(ctx context.Context, req *scoring.GetScoreRequest) (*scoring.GetScoreResponse, error) {
-	score, matchingTags, err := s.GetScoreTags(ctx, req.TaskId, req.Tag)
+	var users []scoring.User
+	for i := range req.Applicants {
+		user := req.Applicants[i]
+		users = append(users, scoring.User{SiderID: user.SiderID, Tags: user.Tags})
+	}
+	scoreds, tags, err := s.GetScoreTags(ctx, req.TaskId, users)
 	if err != nil {
 		return nil, err
 	}
-	return &scoring.GetScoreResponse{Score: score, MatchingTag: matchingTags}, nil
+	var out scoring.GetScoreResponse
+	for i := range scoreds {
+		scored := &scoreds[i]
+		out.Scores = append(out.Scores, &scoring.GetScoreResponse_Applicant{Score: scored.Score, SiderID: scored.SiderID})
+	}
+	out.Tags = tags
+	return &out, nil
 }
 
 func (s *Server) Run(ctx context.Context) <-chan struct{} {

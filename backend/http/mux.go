@@ -29,8 +29,8 @@ func evalHandle(backendHandler *backend.Handler) http.HandlerFunc {
 			log.WithError(err).Error("failure eval input request")
 			return
 		}
-		if evalResp.Applicants.Score > 0 {
-			json.NewEncoder(resp).Encode(evalResp)
+		if err := json.NewEncoder(resp).Encode(evalResp); err != nil {
+			log.WithError(err).Error("failure encode response")
 		}
 	}
 }
